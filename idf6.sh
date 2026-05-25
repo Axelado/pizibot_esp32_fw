@@ -1,4 +1,4 @@
-# Source ce fichier pour activer ESP-IDF v6.0.1 (installation VSCode)
+# Source this file to activate ESP-IDF v6.0.1 (VSCode installation)
 # Usage: source idf6.sh
 
 export IDF_PATH=/home/axel/.espressif/v6.0.1/esp-idf

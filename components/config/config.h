@@ -59,6 +59,6 @@
  * --------------------------------------------------------------------------*/
 #define WHEEL_RADIUS    0.04f   /* meters */
 #define WHEEL_BASE      0.17f    /* wheel track in meters */
-#define WHEEL_MAX_RADS      4.6f    /* vitesse max rad/s (physique, à vide) */
-#define WHEEL_CMD_MAX_RADS  3.5f    /* vitesse max commandable — doit être < WHEEL_MAX_RADS
-                                     * pour que le PID ait de la marge au-dessus de la consigne */
+#define WHEEL_MAX_RADS      4.6f    /* max speed rad/s (physical, no load) */
+#define WHEEL_CMD_MAX_RADS  3.5f    /* max commandable speed — must be < WHEEL_MAX_RADS
+                                     * so the PID has headroom above the setpoint */
