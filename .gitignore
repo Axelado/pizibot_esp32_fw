@@ -1,0 +1,25 @@
+# Build output
+build/
+
+# Python virtual environment
+.venv/
+
+# ESP-IDF
+sdkconfig.old
+
+# Capture data files
+capture*.csv
+data/
+
+# Python cache
+*.pyc
+__pycache__/
+
+# IDE / Editor
+.vscode/
+
+# Claude Code local settings
+.claude/
+
+# macOS
+.DS_Store

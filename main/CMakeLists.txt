@@ -1,0 +1,17 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "tests.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        encoders
+        motors
+        pid
+        serial_comm
+        mpu6050
+        ina219
+        config
+        esp_driver_gpio
+        esp_driver_i2c
+)
