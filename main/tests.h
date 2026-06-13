@@ -14,4 +14,5 @@ void test_identification(void);
 void test_pid_step(void);
 void test_odom_calib(void);
 void test_motor_curve(void);
+void test_motor_minmax(void);
 

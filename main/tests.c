@@ -544,7 +544,7 @@ static void task_odom_calib(void *arg)
         float dl = (float)delta_l * ticks_to_m;
         float dr = (float)delta_r * ticks_to_m;
         float dc = (dl + dr) / 2.0f;
-        float dtheta = (dr - dl) / WHEEL_BASE;
+        float dtheta = (dr - dl) / WHEEL_TRACK;
         x += dc * cosf(theta + dtheta / 2.0f);
         y += dc * sinf(theta + dtheta / 2.0f);
         theta += dtheta;
@@ -627,4 +627,68 @@ void test_motor_curve(void)
     ESP_ERROR_CHECK(motors_init());
 
     xTaskCreate(task_motor_curve, "motor_curve", 4096, NULL, 6, NULL);
+}
+
+/* ===========================================================================
+ * TEST_MOTOR_MINMAX — on-ground dead-zone + saturation check
+ *
+ * Wheels on the ground. Only sweeps duty in [0, MOTOR_MINMAX_LOW_MAX] (dead
+ * zone) and [MOTOR_MINMAX_HIGH_MIN, MOTOR_CURVE_PWM_MAX] (saturation),
+ * open-loop, both wheels driven equally. At each step: settle + measure
+ * forward, then the same duty in reverse for settle+measure, to keep the
+ * robot's net displacement close to zero.
+ *
+ * Output:
+ *   MOTOR_CURVE <duty> <vel_l> <vel_r>
+ *   # motor_minmax complete
+ * ===========================================================================*/
+static void measure_one_duty(int duty)
+{
+    int32_t ticks_l_prev, ticks_r_prev, ticks_l, ticks_r;
+
+    /* Forward: settle, then measure */
+    motors_set_raw(duty, duty);
+    vTaskDelay(pdMS_TO_TICKS((int)(MOTOR_MINMAX_SETTLE_S * 1000)));
+
+    encoders_get(&ticks_l_prev, &ticks_r_prev);
+    vTaskDelay(pdMS_TO_TICKS((int)(MOTOR_MINMAX_MEASURE_S * 1000)));
+    encoders_get(&ticks_l, &ticks_r);
+
+    float vel_l = (float)(ticks_l - ticks_l_prev)
+                   / (4.0f * ENCODER_PPR) * 2.0f * (float)M_PI / MOTOR_MINMAX_MEASURE_S;
+    float vel_r = (float)(ticks_r - ticks_r_prev)
+                   / (4.0f * ENCODER_PPR) * 2.0f * (float)M_PI / MOTOR_MINMAX_MEASURE_S;
+
+    printf("MOTOR_CURVE %d %.4f %.4f\n", duty, vel_l, vel_r);
+
+    /* Reverse for the same duration, to cancel the displacement */
+    if (duty != 0) {
+        motors_set_raw(-duty, -duty);
+        vTaskDelay(pdMS_TO_TICKS((int)((MOTOR_MINMAX_SETTLE_S + MOTOR_MINMAX_MEASURE_S) * 1000)));
+        motors_stop();
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
+static void task_motor_minmax(void *arg)
+{
+    for (int duty = 0; duty <= MOTOR_MINMAX_LOW_MAX; duty += MOTOR_MINMAX_STEP) {
+        measure_one_duty(duty);
+    }
+    for (int duty = MOTOR_MINMAX_HIGH_MIN; duty <= MOTOR_CURVE_PWM_MAX; duty += MOTOR_MINMAX_STEP) {
+        measure_one_duty(duty);
+    }
+
+    motors_stop();
+    printf("# motor_minmax complete\n");
+    vTaskDelete(NULL);
+}
+
+void test_motor_minmax(void)
+{
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));
+    ESP_ERROR_CHECK(encoders_init());
+    ESP_ERROR_CHECK(motors_init());
+
+    xTaskCreate(task_motor_minmax, "motor_minmax", 4096, NULL, 6, NULL);
 }

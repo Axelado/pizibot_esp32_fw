@@ -15,8 +15,9 @@
 #define TEST_PID_STEP   9
 #define TEST_ODOM_CALIB 10
 #define TEST_MOTOR_CURVE 11
+#define TEST_MOTOR_MINMAX 12
 
-#define TEST_MODE       TEST_MOTOR_CURVE
+#define TEST_MODE       TEST_NONE
 
 
 
@@ -60,8 +61,8 @@
  * Robot parameters — calibrate from real measurements
  * --------------------------------------------------------------------------*/
 #define WHEEL_RADIUS    0.04f   /* meters */
-#define WHEEL_BASE      0.29f    /* wheel track in meters (wheel-to-wheel, measured) */
-#define WHEEL_MAX_RADS      18.1f    /* max speed rad/s (physical, no load) */
+#define WHEEL_TRACK     0.26f    /* wheel track in meters (wheel-to-wheel, measured) */
+#define WHEEL_MAX_RADS      14.0f    /* max speed rad/s (physical, no load) */
 #define WHEEL_CMD_MAX_RADS  10.0f    /* max commandable speed — must be < WHEEL_MAX_RADS
                                      * so the PID has headroom above the setpoint */
 /* ---------------------------------------------------------------------------
@@ -84,3 +85,16 @@
 #define MOTOR_CURVE_STEP        8       /* PWM duty increment */
 #define MOTOR_CURVE_SETTLE_S    1.0f    /* settling time before measuring (s) */
 #define MOTOR_CURVE_MEASURE_S   2.0f    /* measurement window (s) */
+
+/* ---------------------------------------------------------------------------
+ * TEST_MOTOR_MINMAX — on-ground dead-zone + saturation check (see tools/motor_curve/)
+ * Wheels on the ground. Only sweeps duty in [0, MOTOR_MINMAX_LOW_MAX] (dead
+ * zone) and [MOTOR_MINMAX_HIGH_MIN, PWM_RAW_MAX] (saturation). Each step runs
+ * forward for settle+measure, then the same duty in reverse for the same
+ * duration, so the net displacement stays close to zero.
+ * --------------------------------------------------------------------------*/
+#define MOTOR_MINMAX_LOW_MAX    200     /* sweep 0..this for the dead zone */
+#define MOTOR_MINMAX_HIGH_MIN   900     /* sweep this..1000 for saturation */
+#define MOTOR_MINMAX_STEP       8       /* PWM duty increment */
+#define MOTOR_MINMAX_SETTLE_S   0.3f    /* settling time before measuring (s) */
+#define MOTOR_MINMAX_MEASURE_S  0.5f    /* measurement window (s) */

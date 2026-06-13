@@ -261,6 +261,10 @@ void app_main(void)
     ESP_LOGI(TAG, "--- MODE TEST : MOTOR CURVE ---");
     test_motor_curve();
 
+#elif TEST_MODE == TEST_MOTOR_MINMAX
+    ESP_LOGI(TAG, "--- MODE TEST : MOTOR MINMAX ---");
+    test_motor_minmax();
+
 #else
     /* Normal firmware */
 

@@ -77,6 +77,7 @@ Set `TEST_MODE` in [components/config/config.h](components/config/config.h) befo
 | `TEST_PID_STEP` | PID step | Step response for PID gain validation |
 | `TEST_ODOM_CALIB` | Odometry calibration | One straight-line/rotation move, prints computed odometry — see [Odometry calibration](#odometry-calibration-ros-covariance-matrices) |
 | `TEST_MOTOR_CURVE` | Motor curve | Open-loop PWM duty sweep, prints measured velocity — see [Motor curve](#motor-curve-velocity-vs-pwm-duty) |
+| `TEST_MOTOR_MINMAX` | Motor min/max | On-ground dead-zone + saturation check — see [Motor min/max](#motor-minmax-on-ground-dead-zone--saturation) |
 
 ## PID tuning workflow
 
@@ -217,6 +218,80 @@ Each step settles for `MOTOR_CURVE_SETTLE_S` then measures the average
 velocity over `MOTOR_CURVE_MEASURE_S` (defaults: 1 s + 2 s, ~6 minutes total
 for the full 0→1000 sweep). Output: `MOTOR_CURVE <duty> <vel_l> <vel_r>`.
 
+**Anomaly at duty=1000:** a no-load run showed velocity collapsing to near 0
+at duty=1000 (down from ~18-19 rad/s at duty=984), with duty=992 already
+showing a dip. This looks like a power-supply brownout under the peak
+current draw at 100% duty, not a real mechanical saturation — worth
+investigating separately (battery voltage during the test) before relying on
+duty=1000 as a setpoint.
+
+## Motor min/max (on-ground dead zone + saturation)
+
+`TEST_MOTOR_CURVE` requires the wheels off the ground and a full 0→1000
+sweep (~6 minutes), which isn't practical on the ground — the robot would
+travel several meters. `TEST_MOTOR_MINMAX` instead only probes the two
+regions of interest, **with the robot on the ground**:
+
+- the dead zone: duty in `[0, MOTOR_MINMAX_LOW_MAX]`
+- the saturation region: duty in `[MOTOR_MINMAX_HIGH_MIN, 1000]`
+
+At each duty, the wheels run forward for `MOTOR_MINMAX_SETTLE_S +
+MOTOR_MINMAX_MEASURE_S` (measuring velocity during the second part), then run
+the **same duty in reverse** for the same total duration, so the net
+displacement stays close to zero — the robot oscillates in place instead of
+driving away.
+
+```bash
+# In config.h: TEST_MODE = TEST_MOTOR_MINMAX
+idf.py build flash
+python3 tools/capture.py --output data/motor_minmax.csv
+python3 tools/motor_curve/plot_motor_curve.py data/motor_minmax.csv
+```
+
+Output: `MOTOR_CURVE <duty> <vel_l> <vel_r>` (same format as
+`TEST_MOTOR_CURVE`, reuses the same plotting script). Defaults probe duty
+0-200 (step 8) and 900-1000 (step 8), with shorter 0.3 s + 0.5 s
+settle/measure windows.
+
+### Results (on-ground, loaded)
+
+| Region | Left | Right |
+|---|---|---|
+| Dead zone | motion starts ~duty 152-176 | motion starts ~duty 128-152 |
+| Saturation (duty 900-996) | ~13.3-14.6 rad/s | ~14.6-15.9 rad/s |
+
+The two wheels differ in both dead zone and saturation, which is normal for
+two separate DC motors. **No per-motor PID tuning is needed**: the integral
+term compensates for static gain/dead-zone differences between wheels by
+driving each motor to whatever duty is needed to reach the shared setpoint.
+The only requirement is that `WHEEL_CMD_MAX_RADS` stays below the
+**weaker** wheel's saturation — at 13 rad/s vs. ~13.3 rad/s (left, the
+limiting wheel), the margin is now very thin (~0.3 rad/s). If the left
+wheel can't reliably reach 13 rad/s under load (battery sag, friction
+variation), its PID will stay saturated and the robot will drift/turn
+when commanded to go straight. Consider re-running `TEST_PID_STEP` at
+this setpoint to confirm the left wheel tracks it without permanent
+saturation.
+
+### Linear/angular velocity limits (for `diff_drive_controller`)
+
+Derived from `WHEEL_CMD_MAX_RADS` (the commandable wheel speed, with PID
+headroom — not the raw saturation values above):
+
+```
+v_max = WHEEL_RADIUS * WHEEL_CMD_MAX_RADS        = 0.04 * 13.0  = 0.52 m/s
+w_max = 2 * v_max / WHEEL_BASE                   = 1.04 / 0.29  ≈ 3.59 rad/s
+```
+
+```yaml
+linear:
+  x:
+    max_velocity: 0.52
+angular:
+  z:
+    max_velocity: 3.59
+```
+
 ## Configuration
 
 All tunable parameters are in [components/config/config.h](components/config/config.h):
@@ -230,8 +305,8 @@ All tunable parameters are in [components/config/config.h](components/config/con
 | `PID_KD` | 0.0 | Derivative gain |
 | `WHEEL_RADIUS` | 0.04 m | Wheel radius |
 | `WHEEL_BASE` | 0.29 m | Wheel track, wheel-to-wheel (measured directly) |
-| `WHEEL_MAX_RADS` | 18.1 rad/s | Physical max speed (no load) |
-| `WHEEL_CMD_MAX_RADS` | 10.0 rad/s | Max commandable speed (headroom above setpoint) |
+| `WHEEL_MAX_RADS` | 14.0 rad/s | Physical max speed (no load) |
+| `WHEEL_CMD_MAX_RADS` | 13.0 rad/s | Max commandable speed (headroom above setpoint) |
 | `ODOM_CALIB_MODE` | `ODOM_CALIB_LINEAR` | `TEST_ODOM_CALIB`: linear or angular calibration move |
 | `ODOM_CALIB_DISTANCE` | 1.0 m | Linear calibration target distance |
 | `ODOM_CALIB_ANGLE` | π rad | Angular calibration target angle |
@@ -239,3 +314,8 @@ All tunable parameters are in [components/config/config.h](components/config/con
 | `MOTOR_CURVE_STEP` | 8 | `TEST_MOTOR_CURVE`: PWM duty increment |
 | `MOTOR_CURVE_SETTLE_S` | 1.0 s | Settling time before measuring at each step |
 | `MOTOR_CURVE_MEASURE_S` | 2.0 s | Measurement window at each step |
+| `MOTOR_MINMAX_LOW_MAX` | 200 | `TEST_MOTOR_MINMAX`: sweep 0..this for the dead zone |
+| `MOTOR_MINMAX_HIGH_MIN` | 900 | `TEST_MOTOR_MINMAX`: sweep this..1000 for saturation |
+| `MOTOR_MINMAX_STEP` | 8 | `TEST_MOTOR_MINMAX`: PWM duty increment |
+| `MOTOR_MINMAX_SETTLE_S` | 0.3 s | `TEST_MOTOR_MINMAX`: settling time before measuring |
+| `MOTOR_MINMAX_MEASURE_S` | 0.5 s | `TEST_MOTOR_MINMAX`: measurement window |
