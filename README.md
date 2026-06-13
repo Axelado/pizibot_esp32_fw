@@ -76,6 +76,7 @@ Set `TEST_MODE` in [components/config/config.h](components/config/config.h) befo
 | `TEST_IDENT` | Identification | Step response for motor param identification |
 | `TEST_PID_STEP` | PID step | Step response for PID gain validation |
 | `TEST_ODOM_CALIB` | Odometry calibration | One straight-line/rotation move, prints computed odometry — see [Odometry calibration](#odometry-calibration-ros-covariance-matrices) |
+| `TEST_MOTOR_CURVE` | Motor curve | Open-loop PWM duty sweep, prints measured velocity — see [Motor curve](#motor-curve-velocity-vs-pwm-duty) |
 
 ## PID tuning workflow
 
@@ -195,6 +196,27 @@ on `WHEEL_BASE`) — redo the angular runs from scratch with the corrected
 value. The linear `x`/`y`/`vx` values are independent of `WHEEL_BASE` and
 remain valid.
 
+## Motor curve (velocity vs PWM duty)
+
+Open-loop characterization of the motor/encoder pair: sweeps the PWM duty
+from 0 to 1000 in steps of `MOTOR_CURVE_STEP` and prints the measured wheel
+velocity at each step. Useful to visualize the dead zone, the linear region
+and saturation, and to spot left/right asymmetry.
+
+**Wheels must be off the ground** — both wheels are driven forward at the
+same duty, open-loop (no PID).
+
+```bash
+# In config.h: TEST_MODE = TEST_MOTOR_CURVE
+idf.py build flash
+python3 tools/capture.py --output data/motor_curve.csv
+python3 tools/motor_curve/plot_motor_curve.py data/motor_curve.csv
+```
+
+Each step settles for `MOTOR_CURVE_SETTLE_S` then measures the average
+velocity over `MOTOR_CURVE_MEASURE_S` (defaults: 1 s + 2 s, ~6 minutes total
+for the full 0→1000 sweep). Output: `MOTOR_CURVE <duty> <vel_l> <vel_r>`.
+
 ## Configuration
 
 All tunable parameters are in [components/config/config.h](components/config/config.h):
@@ -214,3 +236,6 @@ All tunable parameters are in [components/config/config.h](components/config/con
 | `ODOM_CALIB_DISTANCE` | 1.0 m | Linear calibration target distance |
 | `ODOM_CALIB_ANGLE` | π rad | Angular calibration target angle |
 | `ODOM_CALIB_SPEED` | 6.0 rad/s | Wheel speed setpoint during calibration |
+| `MOTOR_CURVE_STEP` | 8 | `TEST_MOTOR_CURVE`: PWM duty increment |
+| `MOTOR_CURVE_SETTLE_S` | 1.0 s | Settling time before measuring at each step |
+| `MOTOR_CURVE_MEASURE_S` | 2.0 s | Measurement window at each step |

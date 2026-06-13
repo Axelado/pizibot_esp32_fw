@@ -257,6 +257,10 @@ void app_main(void)
     ESP_LOGI(TAG, "--- MODE TEST : ODOM CALIB ---");
     test_odom_calib();
 
+#elif TEST_MODE == TEST_MOTOR_CURVE
+    ESP_LOGI(TAG, "--- MODE TEST : MOTOR CURVE ---");
+    test_motor_curve();
+
 #else
     /* Normal firmware */
 

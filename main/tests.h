@@ -13,4 +13,5 @@ void test_all(i2c_master_bus_handle_t bus);
 void test_identification(void);
 void test_pid_step(void);
 void test_odom_calib(void);
+void test_motor_curve(void);
 

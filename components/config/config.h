@@ -14,8 +14,9 @@
 #define TEST_IDENT      8
 #define TEST_PID_STEP   9
 #define TEST_ODOM_CALIB 10
+#define TEST_MOTOR_CURVE 11
 
-#define TEST_MODE       TEST_NONE
+#define TEST_MODE       TEST_MOTOR_CURVE
 
 
 
@@ -74,3 +75,12 @@
 #define ODOM_CALIB_DISTANCE 1.0f       /* meters — used in LINEAR mode */
 #define ODOM_CALIB_ANGLE    3.1416f    /* radians (pi = 180°) — used in ANGULAR mode */
 #define ODOM_CALIB_SPEED    6.0f       /* rad/s wheel setpoint */
+
+/* ---------------------------------------------------------------------------
+ * TEST_MOTOR_CURVE — open-loop velocity vs PWM duty sweep (see tools/motor_curve/)
+ * Wheels off the ground. Sweeps duty from 0 to PWM_RAW_MAX (1000) in steps
+ * of MOTOR_CURVE_STEP, settles, then measures the average wheel velocity.
+ * --------------------------------------------------------------------------*/
+#define MOTOR_CURVE_STEP        8       /* PWM duty increment */
+#define MOTOR_CURVE_SETTLE_S    1.0f    /* settling time before measuring (s) */
+#define MOTOR_CURVE_MEASURE_S   2.0f    /* measurement window (s) */

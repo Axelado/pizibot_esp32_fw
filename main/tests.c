@@ -576,3 +576,55 @@ void test_odom_calib(void)
 
     xTaskCreate(task_odom_calib, "odom_calib", 4096, NULL, 6, NULL);
 }
+
+/* ===========================================================================
+ * TEST_MOTOR_CURVE — open-loop velocity vs PWM duty sweep
+ *
+ * Wheels off the ground. Sweeps duty from 0 to MOTOR_CURVE_PWM_MAX in steps
+ * of MOTOR_CURVE_STEP, open-loop (no PID), both wheels driven equally and
+ * forward. At each step: settle for MOTOR_CURVE_SETTLE_S, then measure the
+ * average wheel velocity over MOTOR_CURVE_MEASURE_S.
+ *
+ * Output:
+ *   MOTOR_CURVE <duty> <vel_l> <vel_r>
+ *   # motor_curve complete
+ * ===========================================================================*/
+#define MOTOR_CURVE_PWM_MAX  1000  /* matches PWM_RAW_MAX in motors.c */
+
+static void task_motor_curve(void *arg)
+{
+    int32_t ticks_l_prev = 0, ticks_r_prev = 0;
+    encoders_get(&ticks_l_prev, &ticks_r_prev);
+
+    for (int duty = 0; duty <= MOTOR_CURVE_PWM_MAX; duty += MOTOR_CURVE_STEP) {
+        motors_set_raw(duty, duty);
+
+        vTaskDelay(pdMS_TO_TICKS((int)(MOTOR_CURVE_SETTLE_S * 1000)));
+
+        encoders_get(&ticks_l_prev, &ticks_r_prev);
+        vTaskDelay(pdMS_TO_TICKS((int)(MOTOR_CURVE_MEASURE_S * 1000)));
+
+        int32_t ticks_l, ticks_r;
+        encoders_get(&ticks_l, &ticks_r);
+
+        float vel_l = (float)(ticks_l - ticks_l_prev)
+                       / (4.0f * ENCODER_PPR) * 2.0f * (float)M_PI / MOTOR_CURVE_MEASURE_S;
+        float vel_r = (float)(ticks_r - ticks_r_prev)
+                       / (4.0f * ENCODER_PPR) * 2.0f * (float)M_PI / MOTOR_CURVE_MEASURE_S;
+
+        printf("MOTOR_CURVE %d %.4f %.4f\n", duty, vel_l, vel_r);
+    }
+
+    motors_stop();
+    printf("# motor_curve complete\n");
+    vTaskDelete(NULL);
+}
+
+void test_motor_curve(void)
+{
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));
+    ESP_ERROR_CHECK(encoders_init());
+    ESP_ERROR_CHECK(motors_init());
+
+    xTaskCreate(task_motor_curve, "motor_curve", 4096, NULL, 6, NULL);
+}

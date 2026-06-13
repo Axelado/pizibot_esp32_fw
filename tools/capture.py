@@ -36,8 +36,8 @@ def main():
                 line = raw.decode('utf-8', errors='ignore').strip()
                 if not line:
                     continue
-                # Useful lines: CSV header, numeric data, IMU/ODOM frames, end line
-                if line.startswith(('t,', 'IMU', 'ODOM_CALIB', args.end)) or line[0].isdigit():
+                # Useful lines: CSV header, numeric data, IMU/ODOM/MOTOR_CURVE frames, end line
+                if line.startswith(('t,', 'IMU', 'ODOM_CALIB', 'MOTOR_CURVE', args.end)) or line[0].isdigit():
                     print(line)
                     f.write(line + '\n')
                     f.flush()
