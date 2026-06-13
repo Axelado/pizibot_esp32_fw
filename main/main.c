@@ -32,7 +32,9 @@ static portMUX_TYPE   s_batt_mux = portMUX_INITIALIZER_UNLOCKED;
 
 /* ---------------------------------------------------------------------------
  * Tick delta to rad/s conversion
- * 4x quadrature: 4 * ENCODER_PPR transitions per revolution
+ * ENCODER_PPR = pulses per revolution (pre-quadrature). 4 * ENCODER_PPR =
+ * ticks per wheel revolution, as returned by encoders_get() (4x quadrature
+ * decoding included).
  * --------------------------------------------------------------------------*/
 static inline float ticks_to_rads(int32_t delta, float dt)
 {
@@ -250,6 +252,10 @@ void app_main(void)
 #elif TEST_MODE == TEST_PID_STEP
     ESP_LOGI(TAG, "--- MODE TEST : PID STEP ---");
     test_pid_step();
+
+#elif TEST_MODE == TEST_ODOM_CALIB
+    ESP_LOGI(TAG, "--- MODE TEST : ODOM CALIB ---");
+    test_odom_calib();
 
 #else
     /* Normal firmware */

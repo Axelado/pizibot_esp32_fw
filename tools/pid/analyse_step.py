@@ -18,7 +18,7 @@ def main():
     args = parser.parse_args()
 
     data = np.loadtxt(args.csv, delimiter=',', skiprows=1, comments='#')
-    t, sp, mes, pwm = data[:, 0], data[:, 1], data[:, 2], data[:, 3]
+    t, sp, mes, mes_r, pwm = data[:, 0], data[:, 1], data[:, 2], data[:, 3], data[:, 4]
 
     # --- Metrics for the positive phase (t = 3s to 6s) ---
     mask   = (t >= 3.0) & (t < 6.0)
@@ -63,8 +63,9 @@ def main():
     # --- Plot ---
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
 
-    ax1.plot(t, sp,  '--', label='setpoint', linewidth=1.5)
-    ax1.plot(t, mes,       label='measured',  linewidth=1.5)
+    ax1.plot(t, sp,   '--', label='setpoint',        linewidth=1.5)
+    ax1.plot(t, mes,        label='measured (left)', linewidth=1.5)
+    ax1.plot(t, mes_r,      label='measured (right)', linewidth=1.5)
     for xv in [3.0, 6.0]:
         ax1.axvline(xv, color='gray', linestyle=':', linewidth=1)
     ax1.set_ylabel('Speed (rad/s)')

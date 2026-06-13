@@ -384,7 +384,7 @@ static void task_ident(void *arg)
         vTaskDelayUntil(&last_wake, period);
 
         encoders_get(&ticks_curr, &dummy);
-        /* 4x quadrature: 4 * ENCODER_PPR ticks per revolution */
+        /* 4 * ENCODER_PPR = ticks per wheel revolution (4x quadrature included) */
         float vel = (float)(ticks_curr - ticks_prev)
                     / (4.0f * ENCODER_PPR) * 2.0f * (float)M_PI / IDENT_DT;
         ticks_prev = ticks_curr;
@@ -412,7 +412,9 @@ void test_identification(void)
  * TEST_PID_STEP — PID gain validation via step response
  *
  * Sequence: 3s at 0 → 3s at STEP_SP → 3s at -STEP_SP → stop
- * CSV output: "t,setpoint,measured"  → plot with analyse_pid.py
+ * Single PID driven by the left wheel; same PWM applied to both motors
+ * (both wheels run together, as in normal operation).
+ * CSV output: "t,setpoint,mesure,mesure_r,pwm"  → plot with analyse_step.py
  *
  * Visual criteria:
  *   OK             : measured follows setpoint with no overshoot or oscillation
@@ -420,7 +422,7 @@ void test_identification(void)
  *   Ki too large   : slow oscillations (period > 0.5 s)
  *   Gains too small: slow response, steady-state error
  * ===========================================================================*/
-#define STEP_SP   2.0f   /* rad/s — choisir < WHEEL_MAX_RADS */
+#define STEP_SP   4.0f   /* rad/s — choisir < WHEEL_MAX_RADS */
 #define STEP_DT   0.01f  /* 100 Hz */
 
 static void task_pid_step(void *arg)
@@ -428,14 +430,15 @@ static void task_pid_step(void *arg)
     pid_t pid;
     pid_init(&pid, PID_KP, PID_KI, PID_KD, -1000.0f, 1000.0f);
 
-    int32_t ticks_prev = 0, ticks_curr = 0, dummy;
-    encoders_get(&ticks_prev, &dummy);
+    int32_t ticks_l_prev = 0, ticks_l_curr = 0;
+    int32_t ticks_r_prev = 0, ticks_r_curr = 0;
+    encoders_get(&ticks_l_prev, &ticks_r_prev);
 
     float setpoint = 0.0f;
     float t = 0.0f;
     const float total = 9.0f;   /* 3 phases × 3s */
 
-    printf("t,setpoint,mesure,pwm\n");
+    printf("t,setpoint,mesure,mesure_r,pwm\n");
 
     const TickType_t period = pdMS_TO_TICKS((int)(STEP_DT * 1000));
     TickType_t last_wake = xTaskGetTickCount();
@@ -448,15 +451,19 @@ static void task_pid_step(void *arg)
         else if (t < 6.0f) setpoint =  STEP_SP;
         else               setpoint = -STEP_SP;
 
-        encoders_get(&ticks_curr, &dummy);
-        float vel = (float)(ticks_curr - ticks_prev)
+        encoders_get(&ticks_l_curr, &ticks_r_curr);
+        float vel_l = (float)(ticks_l_curr - ticks_l_prev)
                     / (4.0f * ENCODER_PPR) * 2.0f * (float)M_PI / STEP_DT;
-        ticks_prev = ticks_curr;
+        float vel_r = (float)(ticks_r_curr - ticks_r_prev)
+                    / (4.0f * ENCODER_PPR) * 2.0f * (float)M_PI / STEP_DT;
+        ticks_l_prev = ticks_l_curr;
+        ticks_r_prev = ticks_r_curr;
 
-        int out = (int)pid_compute(&pid, setpoint, vel, STEP_DT);
-        motors_set_raw(out, 0);
+        /* Single PID driven by the left wheel, same output applied to both motors */
+        int out = (int)pid_compute(&pid, setpoint, vel_l, STEP_DT);
+        motors_set_raw(out, out);
 
-        printf("%.3f,%.4f,%.4f,%d\n", t, setpoint, vel, out);
+        printf("%.3f,%.4f,%.4f,%.4f,%d\n", t, setpoint, vel_l, vel_r, out);
         t += STEP_DT;
     }
 
@@ -472,4 +479,100 @@ void test_pid_step(void)
     ESP_ERROR_CHECK(motors_init());
 
     xTaskCreate(task_pid_step, "pid_step", 4096, NULL, 6, NULL);
+}
+
+/* ===========================================================================
+ * TEST_ODOM_CALIB — odometry covariance calibration
+ *
+ * Drives a single closed-loop motion -- straight line or in-place rotation,
+ * selected by ODOM_CALIB_MODE -- computing odometry (x, y, theta) from the
+ * encoders with the standard differential-drive model. Stops automatically
+ * once the target distance (ODOM_CALIB_DISTANCE) or angle (ODOM_CALIB_ANGLE)
+ * is reached, then prints the resulting pose.
+ *
+ * Compare the printed (x, y, theta) against a real-world measurement (tape
+ * measure / protractor marks on the floor) over several runs to estimate
+ * the odometry covariance -- see tools/odom_calib/calc_odom_covariance.py.
+ *
+ * Output:
+ *   ODOM_CALIB <mode> <x> <y> <theta> <duration_s>
+ *   # odom_calib complete
+ * ===========================================================================*/
+#define ODOM_CALIB_DT  0.01f  /* 100 Hz */
+
+static void task_odom_calib(void *arg)
+{
+    pid_t pid_left, pid_right;
+    pid_init(&pid_left,  PID_KP, PID_KI, PID_KD, -1000.0f, 1000.0f);
+    pid_init(&pid_right, PID_KP, PID_KI, PID_KD, -1000.0f, 1000.0f);
+
+    int32_t ticks_l_prev = 0, ticks_r_prev = 0;
+    encoders_get(&ticks_l_prev, &ticks_r_prev);
+
+#if ODOM_CALIB_MODE == ODOM_CALIB_ANGULAR
+    const float sp_l = -ODOM_CALIB_SPEED;
+    const float sp_r =  ODOM_CALIB_SPEED;
+    const char *mode_str = "ANGULAR";
+#else
+    const float sp_l = ODOM_CALIB_SPEED;
+    const float sp_r = ODOM_CALIB_SPEED;
+    const char *mode_str = "LINEAR";
+#endif
+
+    /* Distance traveled by one wheel per encoder tick (meters) */
+    const float ticks_to_m = (2.0f * (float)M_PI * WHEEL_RADIUS) / (4.0f * ENCODER_PPR);
+
+    float x = 0.0f, y = 0.0f, theta = 0.0f, dist = 0.0f, t = 0.0f;
+
+    const TickType_t period = pdMS_TO_TICKS((int)(ODOM_CALIB_DT * 1000));
+    TickType_t last_wake = xTaskGetTickCount();
+
+    for (;;) {
+        vTaskDelayUntil(&last_wake, period);
+
+        int32_t ticks_l, ticks_r;
+        encoders_get(&ticks_l, &ticks_r);
+        int32_t delta_l = ticks_l - ticks_l_prev;
+        int32_t delta_r = ticks_r - ticks_r_prev;
+        ticks_l_prev = ticks_l;
+        ticks_r_prev = ticks_r;
+
+        float vel_l = (float)delta_l / (4.0f * ENCODER_PPR) * 2.0f * (float)M_PI / ODOM_CALIB_DT;
+        float vel_r = (float)delta_r / (4.0f * ENCODER_PPR) * 2.0f * (float)M_PI / ODOM_CALIB_DT;
+
+        /* Differential-drive odometry update */
+        float dl = (float)delta_l * ticks_to_m;
+        float dr = (float)delta_r * ticks_to_m;
+        float dc = (dl + dr) / 2.0f;
+        float dtheta = (dr - dl) / WHEEL_BASE;
+        x += dc * cosf(theta + dtheta / 2.0f);
+        y += dc * sinf(theta + dtheta / 2.0f);
+        theta += dtheta;
+        dist += fabsf(dc);
+        t += ODOM_CALIB_DT;
+
+        int out_l = (int)pid_compute(&pid_left,  sp_l, vel_l, ODOM_CALIB_DT);
+        int out_r = (int)pid_compute(&pid_right, sp_r, vel_r, ODOM_CALIB_DT);
+        motors_set_raw(out_l, out_r);
+
+#if ODOM_CALIB_MODE == ODOM_CALIB_ANGULAR
+        if (fabsf(theta) >= ODOM_CALIB_ANGLE) break;
+#else
+        if (dist >= ODOM_CALIB_DISTANCE) break;
+#endif
+    }
+
+    motors_stop();
+    printf("ODOM_CALIB %s %.5f %.5f %.5f %.3f\n", mode_str, x, y, theta, t);
+    printf("# odom_calib complete\n");
+    vTaskDelete(NULL);
+}
+
+void test_odom_calib(void)
+{
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));
+    ESP_ERROR_CHECK(encoders_init());
+    ESP_ERROR_CHECK(motors_init());
+
+    xTaskCreate(task_odom_calib, "odom_calib", 4096, NULL, 6, NULL);
 }

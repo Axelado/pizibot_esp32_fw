@@ -9,6 +9,10 @@
  * Configures: gyro ±500°/s, accel ±2g, DLPF 42 Hz, sample rate 100 Hz.
  * Verifies WHO_AM_I on startup.
  *
+ * Also performs a ~1 s gyro bias calibration by averaging raw readings.
+ * The robot MUST be stationary and flat while this runs (i.e. at boot).
+ * The resulting offset is subtracted from every mpu6050_read() call.
+ *
  * @param bus  Master I2C bus handle (created in app_main)
  * @return ESP_OK on success
  */
@@ -16,6 +20,8 @@ esp_err_t mpu6050_init(i2c_master_bus_handle_t bus);
 
 /**
  * @brief Reads accelerometer and gyroscope in SI units.
+ *
+ * Gyro values have the bias measured at mpu6050_init() subtracted.
  *
  * @param ax, ay, az  Acceleration in m/s²
  * @param gx, gy, gz  Angular velocity in rad/s
